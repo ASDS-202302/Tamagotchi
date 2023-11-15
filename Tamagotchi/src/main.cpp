@@ -20,6 +20,8 @@
 #define BUTTON_03 19
 #define BUTTON_04 23
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+int dataTest1=0;
+int dataTest2=0;
 
 // Prototipos de funciones para tareas
 void vUITask(void *pvParameters);
@@ -39,6 +41,7 @@ SemaphoreHandle_t xDataMutex;
 
 
 void setup() {
+  Serial.begin(9600);
   // Inicialización de periféricos y recursos aquí
 
   // Crear colas y semáforos
@@ -50,11 +53,11 @@ void setup() {
   xDataMutex = xSemaphoreCreateMutex();
 
   // Crear tareas
-  xTaskCreate(vUITask, "UI Task", 1000, NULL, 2, NULL);
-  xTaskCreate(vStateUpdateTask, "State Update Task", 1000, NULL, 2, NULL);
-  xTaskCreate(vFeedingTask, "Feeding Task", 1000, NULL, 2, NULL);
-  xTaskCreate(vGameTask, "Game Task", 1000, NULL, 2, NULL);
-  xTaskCreate(vSleepTask, "Sleep Task", 1000, NULL, 2, NULL);
+  // xTaskCreate(vUITask, "UI Task", 1000, NULL, 2, NULL);
+  // xTaskCreate(vStateUpdateTask, "State Update Task", 1000, NULL, 2, NULL);
+  // xTaskCreate(vFeedingTask, "Feeding Task", 1000, NULL, 2, NULL);
+  // xTaskCreate(vGameTask, "Game Task", 1000, NULL, 2, NULL);
+  xTaskCreate(vSleepTask, "Sleep Task", 1000, NULL, 3, NULL);
   xTaskCreate(vPowerControlTask, "Power Control Task", 1000, NULL, 2, NULL);
 
   // Iniciar el planificador de FreeRTOS
@@ -110,14 +113,29 @@ void vGameTask(void *pvParameters) {
 void vSleepTask(void *pvParameters) {
   while (1) {
     // Control de sueño de la mascota
-    vTaskDelay(pdMS_TO_TICKS(5000)); // Esperar 5 segundos
+    xSemaphoreTake(xDataMutex, portMAX_DELAY);
+    dataTest1=2;
+    dataTest2=3;
+    Serial.print("Sleep Task data: ");
+    Serial.print(dataTest1);
+    Serial.print(dataTest2);
+    Serial.print("\n");
+    vTaskDelay(pdMS_TO_TICKS(5000)); // Esperar 3 segundos
+    xSemaphoreGive(xDataMutex);
   }
 }
 
-void
-vPowerControlTask(void *pvParameters) {
+void vPowerControlTask(void *pvParameters) {
   while (1) {
     // Control de energía
-    vTaskDelay(pdMS_TO_TICKS(10000)); // Esperar 10 segundos
+    xSemaphoreTake(xDataMutex, portMAX_DELAY);
+    dataTest1=4;
+    dataTest2=5;
+    Serial.print("Control Task data: ");
+    Serial.print(dataTest1);
+    Serial.print(dataTest2);
+    Serial.print("\n");
+    vTaskDelay(pdMS_TO_TICKS(500)); // Esperar 3 segundos
+    xSemaphoreGive(xDataMutex);
   }
 }
