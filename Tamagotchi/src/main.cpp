@@ -1,15 +1,15 @@
 #include <Arduino.h>
 #include <Wire.h>
-#include <Adafruit_MPU6050.h>
+//#include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <SPI.h>
-#include "freertos/FreeRTOS.h" // Incluye el encabezado de FreeRTOS de esta manera
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
+#include "freertos/queue.h"
 
-
-Adafruit_MPU6050 mpu;
-sensors_event_t a, g, temp;
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -21,218 +21,103 @@ sensors_event_t a, g, temp;
 #define BUTTON_04 23
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-unsigned int Hambre = 100;
-unsigned int Sueno = 100;
-unsigned int Felicidad = 100;
-unsigned int Edad = 1;
-int Salud = 100;
+// Prototipos de funciones para tareas
+void vUITask(void *pvParameters);
+void vStateUpdateTask(void *pvParameters);
+void vFeedingTask(void *pvParameters);
+void vGameTask(void *pvParameters);
+void vSleepTask(void *pvParameters);
+void vPowerControlTask(void *pvParameters);
 
-int b1=0;
-int b2=0;
-int b3=0;
-int b4=0;
+// Definición de colas y semáforos
+QueueHandle_t xUserInputQueue;
+QueueHandle_t xGameResultQueue;
+SemaphoreHandle_t xFoodAvailableSemaphore;
+SemaphoreHandle_t xMultipleGamesSemaphore;
+SemaphoreHandle_t xUserInputSemaphore;
+SemaphoreHandle_t xDataMutex;
 
-unsigned long lastUpdateTime = 0;
-const int hambreUpdateInterval = 5000;  // Intervalo de actualización en milisegundos (5 segundos)
-
-unsigned long lastAgeUpdateTime = 0;
-const int edadUpdateInterval = 10000;  // Intervalo de actualización en milisegundos (10 segundos)
-
-unsigned long lastUserInteractionTime = 0;
-const int userInteractionInterval = 1000;  // Intervalo de espera en milisegundos (1 segundo)
-
-const int OPCION_TAMAGOCHI = 1;
-const int OPCION_JUEGO = 2;
-
-void updateVariables() {
-  mpu.getEvent(&a, &g, &temp);
-
-  unsigned long currentTime = millis();
-  if (currentTime - lastUpdateTime >= hambreUpdateInterval) {
-    Hambre -= 1;
-    lastUpdateTime = currentTime;
-  }
-  Sueno -= 1;
-  Felicidad -= 1;
-}
-
-void updateSalud() {
-  // Calcula la salud basada en las variables Hambre, Sueno y Felicidad
-  Salud = (Hambre + Sueno + Felicidad) / 3;
-}
-
-void updateEdad() {
-  // Incrementa la edad en 1 cada 10 segundos
-  unsigned long currentTime = millis();
-  if (currentTime - lastAgeUpdateTime >= edadUpdateInterval) {
-    Edad++;
-    lastAgeUpdateTime = currentTime;
-  }
-}
-
-void comer() {
-  Hambre += 20;
-  Felicidad += 10;
-}
-
-void dormir() {
-  Sueno += 30;
-  Felicidad += 10;
-}
-
-void drawTamagotchi(int x, int y, int size, int mood) {
-  // Dibuja el Tamagotchi en la posición (x, y) con el tamaño especificado
-  display.drawCircle(x + size / 2, y + size / 2, size / 2, WHITE);
-  // Dibuja los ojos
-  display.drawCircle(x + size / 3, y + size / 3, size / 10, WHITE);
-  display.drawCircle(x + 2 * size / 3, y + size / 3, size / 10, WHITE);
-  // Dibuja la boca
-  if (mood > 50) {
-    display.fillRect(x + size / 3, y + 2 * size / 3, size / 3, size / 10, WHITE);
-  } else {
-    display.drawRect(x + size / 3, y + 2 * size / 3, size / 3, size / 10, WHITE);
-  }
-}
-void imprimirMenu(int opcion, int opcionResaltada) {
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(WHITE);
-  display.setCursor(5, 0);
-  display.println("Bienvenido");
-  display.setCursor(5, 10);
-  display.println("Elige una opcion:");
-
-  for (int i = 0; i < 4; i++) {
-    if (i + 1 == opcionResaltada) {
-      display.setTextColor(BLACK, WHITE); // Cambiar el color del texto resaltado
-    } else {
-      display.setTextColor(WHITE);
-    }
-
-    switch (i + 1) {
-      case 1:
-        display.setCursor(10, 20 + i * 10);
-        display.println("1. Tamagotchi");
-        break;
-      case 2:
-        display.setCursor(10, 20 + i * 10);
-        display.println("2. Patio de juegos");
-        break;
-      case 3:
-        display.setCursor(10, 20 + i * 10);
-        display.println("3. Tienda");
-        break;
-      case 4:
-        display.setCursor(10, 20 + i * 10);
-        display.println("4. Casa");
-        break;
-      default:
-        break;
-    }
-  }
-
-  display.display();
-}
-
-void tamagotchiLoop() {
-  updateVariables();
-  updateSalud();
-  updateEdad();
-  Serial.println("Presiona cualquier tecla para interactuar con el Tamagotchi.");
-  while (!Serial.available()) {
-    // Espera a que el usuario presione una tecla para interactuar con el Tamagotchi
-  }
-  Serial.read(); 
-
-
-  // Dibuja el estado en la pantalla OLED
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(WHITE);
-  display.setCursor(0, 0);
-  display.print("Salud: ");
-  display.println(Salud);
-  display.print("Hambre: ");
-  display.println(Hambre);
-  display.print("Sueño: ");
-  display.println(Sueno);
-  display.print("Felicidad: ");
-  display.println(Felicidad);
-  drawTamagotchi(0, 25, 40, Felicidad);
-  display.display();
-
-  // Interacción del usuario
-  unsigned long currentTime = millis();
-  if (currentTime - lastUserInteractionTime >= userInteractionInterval) {
-    Serial.println("Elige una opcion:");
-    Serial.println("1. Comer");
-    Serial.println("2. Dormir");
-
-    while (!Serial.available()) {
-      // Espera a que el usuario ingrese una opción
-    }
-
-    int opcion = Serial.parseInt();
-    if (opcion == 1) {
-      comer();
-    } else if (opcion == 2) {
-      dormir();
-    }
-
-    lastUserInteractionTime = currentTime;
-  }
-}
 
 void setup() {
-  Serial.begin(9600);
+  // Inicialización de periféricos y recursos aquí
 
-  if (!mpu.begin()) {
-    Serial.println("Failed to find MPU6050 chip");
-    while (1) {
-      delay(10);
-    }
-  }
-  Serial.println("MPU6050 Found!");
+  // Crear colas y semáforos
+  xUserInputQueue = xQueueCreate(5, sizeof(uint8_t));
+  xGameResultQueue = xQueueCreate(5, sizeof(uint8_t));
+  xFoodAvailableSemaphore = xSemaphoreCreateBinary();
+  xMultipleGamesSemaphore = xSemaphoreCreateMutex();
+  xUserInputSemaphore = xSemaphoreCreateBinary();
+  xDataMutex = xSemaphoreCreateMutex();
 
-  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-    Serial.println(F("SSD1306 allocation failed"));
-    for (;;);
-  }
+  // Crear tareas
+  xTaskCreate(vUITask, "UI Task", 1000, NULL, 2, NULL);
+  xTaskCreate(vStateUpdateTask, "State Update Task", 1000, NULL, 2, NULL);
+  xTaskCreate(vFeedingTask, "Feeding Task", 1000, NULL, 2, NULL);
+  xTaskCreate(vGameTask, "Game Task", 1000, NULL, 2, NULL);
+  xTaskCreate(vSleepTask, "Sleep Task", 1000, NULL, 2, NULL);
+  xTaskCreate(vPowerControlTask, "Power Control Task", 1000, NULL, 2, NULL);
 
-  pinMode(BUTTON_01, INPUT);
-  pinMode(BUTTON_02, INPUT);
-  pinMode(BUTTON_03, INPUT);
-  pinMode(BUTTON_04, INPUT);
-
-
+  // Iniciar el planificador de FreeRTOS
+  vTaskStartScheduler();
 }
 
+void loop(){
+  // No hacer nada
+}
 
-int opcionActual = 1; // Inicializa la opción actual en 1
+uint8_t getUserInput(){
+  return 0;
+}
 
-void loop() {
-  b1 = digitalRead(BUTTON_01);
-  b2 = digitalRead(BUTTON_02);
-  b3 = digitalRead(BUTTON_03);
-  b4 = digitalRead(BUTTON_04);
-
-  if (b2) {
-    opcionActual = (opcionActual > 1) ? opcionActual - 1 : 4;
-  } else if (b3) {
-    opcionActual = (opcionActual < 4) ? opcionActual + 1 : 1;
+void vUITask(void *pvParameters){
+  while (1) {
+    if (xSemaphoreTake(xUserInputSemaphore, portMAX_DELAY) == pdTRUE) {
+      uint8_t userInput = getUserInput(); // Obtener entrada del usuario (simulado)
+      xQueueSend(xUserInputQueue, &userInput, portMAX_DELAY);
+    }
   }
+}
 
-  if (b1) {
-    imprimirMenu(opcionActual, opcionActual);
-  } else if (b2) {
-    imprimirMenu(opcionActual, opcionActual);
-  } else if (b3) {
-    imprimirMenu(opcionActual, opcionActual);
-  } else if (b4) {
-    imprimirMenu(opcionActual, opcionActual);
-  } else {
-    imprimirMenu(0, opcionActual);
+void vStateUpdateTask(void *pvParameters) {
+// Implementación de la tarea de actualización de estado
+  while (1) {
+    // Actualizar estado general de la mascota
+    // Usar xSemaphoreTake() y xSemaphoreGive() para acceder a datos compartidos
+    xSemaphoreTake(xDataMutex, portMAX_DELAY);
+    // Actualizar datos co mpartidos
+    xSemaphoreGive(xDataMutex);
+    vTaskDelay(pdMS_TO_TICKS(1000)); // Esperar 1 segundo
   }
+}
 
-  delay(250);
+void vFeedingTask(void *pvParameters) {
+  while (1) {
+    // Esperar a que esté disponible la comida
+    xSemaphoreTake(xFoodAvailableSemaphore, portMAX_DELAY);
+    // Alimentar a la mascota
+    vTaskDelay(pdMS_TO_TICKS(500)); // Esperar 0.5 segundos
+  }
+}
+
+void vGameTask(void *pvParameters) {
+  while (1) {
+    // Realizar una acción de juego
+    xSemaphoreGive(xMultipleGamesSemaphore); // Liberar el semáforo para permitir ot ro juego
+    vTaskDelay(pdMS_TO_TICKS(2000)); // Esperar 2 segundos
+  }
+}
+
+void vSleepTask(void *pvParameters) {
+  while (1) {
+    // Control de sueño de la mascota
+    vTaskDelay(pdMS_TO_TICKS(5000)); // Esperar 5 segundos
+  }
+}
+
+void
+vPowerControlTask(void *pvParameters) {
+  while (1) {
+    // Control de energía
+    vTaskDelay(pdMS_TO_TICKS(10000)); // Esperar 10 segundos
+  }
 }
