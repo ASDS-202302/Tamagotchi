@@ -30,8 +30,8 @@ void vSleepTask(void *pvParameters);
 void vPowerControlTask(void *pvParameters);
 
 // Definición de colas y semáforos
-QueueHandle_t xUserInputQueue;
-QueueHandle_t xGameResultQueue;
+QueueHandle_t xUserInputQueue; // Cola con las entradas de los botones
+QueueHandle_t xGameResultQueue; // 
 SemaphoreHandle_t xFoodAvailableSemaphore;
 SemaphoreHandle_t xMultipleGamesSemaphore;
 SemaphoreHandle_t xUserInputSemaphore;
@@ -45,7 +45,7 @@ void setup() {
   xUserInputQueue = xQueueCreate(5, sizeof(uint8_t));
   xGameResultQueue = xQueueCreate(5, sizeof(uint8_t));
   xFoodAvailableSemaphore = xSemaphoreCreateBinary();
-  xMultipleGamesSemaphore = xSemaphoreCreateMutex();
+  xMultipleGamesSemaphore = xSemaphoreCreateMutex(); // Permite solo una interaccion a la vez
   xUserInputSemaphore = xSemaphoreCreateBinary();
   xDataMutex = xSemaphoreCreateMutex();
 
