@@ -75,6 +75,13 @@ const unsigned char cleanButton [] PROGMEM = {
 	0x00, 0x03, 0xf0, 0x00, 0x03, 0xf0, 0x00, 0x07, 0xf8, 0x00, 0x07, 0xf8, 0x00, 0x07, 0xf8, 0x00, 
 	0x07, 0xf8, 0x00, 0x03, 0xf0, 0x00, 0x80, 0x00, 0x10, 0xc0, 0x00, 0x30
 };
+//boton muerte
+const unsigned char deathButton [] PROGMEM = {
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x60, 0x00, 0x01, 0xf8, 0x00, 0x01, 0xfc, 0x00, 0x03, 
+	0xfc, 0x00, 0x03, 0xfc, 0x00, 0x03, 0x6c, 0x00, 0x03, 0x6c, 0x00, 0x0d, 0xfb, 0x00, 0x0e, 0xf7, 
+	0x00, 0x0f, 0x1f, 0x00, 0x0f, 0xfc, 0x00, 0x01, 0xf8, 0x00, 0x0f, 0xff, 0x00, 0x0f, 0x0f, 0x00, 
+	0x0c, 0x03, 0x00, 0x0c, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
 // bitmap de estado de animo neutral
 const unsigned char neutral_mood [] PROGMEM = {
 	0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x03, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x0f, 0xcc, 
@@ -137,7 +144,7 @@ void setup() {
     Serial.println(F("SSD1306 allocation failed"));
     for (;;);
   }
-
+      display.display();
       display.clearDisplay();
       display.setTextSize(1);
       display.setTextColor(WHITE);
@@ -161,11 +168,15 @@ void setup() {
       display.print(salud);
       // Simbolos botones
       display.drawBitmap(0, 44, eatButton, 20, 20, WHITE);
-      display.drawBitmap(30, 44, cleanButton, 20, 20, WHITE);
-      display.drawBitmap(60, 44, playButton, 20, 20, WHITE);
-      display.drawBitmap(90, 44, sleepButton, 20, 20, WHITE);
+      display.drawBitmap(25, 44, cleanButton, 20, 20, WHITE);
+      display.drawBitmap(50, 44, playButton, 20, 20, WHITE);
+      display.drawBitmap(75, 44, sleepButton, 20, 20, WHITE);
+      display.drawBitmap(100, 44, deathButton, 20, 20, WHITE);
       display.display();
-
+      Serial.println("TEST");
+      delay(2000);
+      display.drawBitmap(25, 44, cleanButton, 20, 20, BLACK, WHITE);
+      display.display();
 
   // Crear colas y semáforos
   xUserInputQueue = xQueueCreate(5, sizeof(uint8_t));
@@ -175,9 +186,10 @@ void setup() {
   xUserInputSemaphore = xSemaphoreCreateBinary();
   xDataMutex = xSemaphoreCreateMutex();
 
+  
   // Crear tareas
-  xTaskCreate(vUITask, "UI Task", 1000, NULL, 2, NULL);
-  xTaskCreate(vUserInputTask, "User Input Task", 1000, NULL, 2, NULL);
+  xTaskCreate(vUITask, "UI Task", 1000, NULL, 1, NULL);
+  xTaskCreate(vUserInputTask, "User Input Task", 1000, NULL, 1, NULL);
   // xTaskCreate(vStateUpdateTask, "State Update Task", 1000, NULL, 2, NULL);
   // xTaskCreate(vFeedingTask, "Feeding Task", 1000, NULL, 2, NULL);
   // xTaskCreate(vGameTask, "Game Task", 1000, NULL, 2, NULL);
@@ -185,7 +197,7 @@ void setup() {
   // xTaskCreate(vCleanTask, "Clean Task", 1000, NULL, 2, NULL);
 
   // Iniciar el planificador de FreeRTOS
-  vTaskStartScheduler();
+  // vTaskStartScheduler();
 }
 
 void loop(){
@@ -204,17 +216,19 @@ void vUITask(void *pvParameters){
     //   display.display();
   
     // }
-    vTaskDelay(pdMS_TO_TICKS(7000)); // Esperar 1 segundo
+    Serial.println("UI TASK");
+    vTaskDelay(pdMS_TO_TICKS(4000)); // Esperar 1 segundo
   }
 }
 
 void vUserInputTask(void *pvParameters){
   while (1) {
-    Serial.println("UINPUT TASk");
-    display.drawBitmap(90, 44, sleepButton, 20, 20,BLACK, WHITE);
-    display.display();
+    // Serial.println("UINPUT TASk");
+    // display.drawBitmap(90, 44, sleepButton, 20, 20,BLACK, WHITE);
+    // display.display();
     // xSemaphoreGive(xUserInputSemaphore);
-    vTaskDelay(pdMS_TO_TICKS(7000)); // Esperar 1 segundo
+    Serial.println("USER INPUT TASK");
+    vTaskDelay(pdMS_TO_TICKS(2000)); // Esperar 1 segundo
     }
   }
 
