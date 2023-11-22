@@ -1,8 +1,10 @@
 #include <Arduino.h>
 #include <Wire.h>
-// #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_GFX.h>
+#include <Adafruit_GFX.h>
+#include <I2Cdev.h>
+#include <MPU6050.h>
 #include <Adafruit_SSD1306.h>
 #include <SPI.h>
 #include "freertos/FreeRTOS.h"
@@ -19,6 +21,7 @@
 #define BUTTON_03 19
 #define BUTTON_04 23
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+MPU6050 sensor;
 
 // BITMAPS GENERADOS CON: https://javl.github.io/image2cpp/
 // simbolo de vida
@@ -95,35 +98,41 @@ const unsigned char neutral_mood[] PROGMEM = {
     0x01, 0xff, 0xff, 0xff, 0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
+// Status variables
 unsigned int limpieza;
 unsigned int hambre;
 unsigned int aburrimiento;
 unsigned int sueno;
 unsigned int salud;
 unsigned int edad;
-bool left, right, enter, esc;
-uint8_t xQueueTx, xQueueRx;
+
+double k;                     // Factor de crecimiento
+int option;                   // Opcion escogida
+bool left, right, enter, esc; // Botones
+
+// Variables de MPU6050
+int16_t ax, ay, az;
+int16_t gx, gy, gz;
 
 // Prototipos de funciones para tareas
 void vUITask(void *pvParameters);          // Interfaz grafica
 void vUserInputTask(void *pvParameters);   // Recibir el input del usuario
 void vStateUpdateTask(void *pvParameters); // Actualizar variables de estado
+void vAgeTask(void *pvParameters);         // Envejecer
 void vFeedingTask(void *pvParameters);     // Alimentar
 void vGameTask(void *pvParameters);        // Jugar
 void vSleepTask(void *pvParameters);       // Dormir
 void vCleanTask(void *pvParameters);       // Limpiar
 
 // Definición de colas y semáforos
-QueueHandle_t xUserInputQueue;  // Cola con las entradas de los botones
-QueueHandle_t xGameResultQueue; //
-SemaphoreHandle_t xFoodAvailableSemaphore;
-SemaphoreHandle_t xMultipleGamesSemaphore; // Permite solo una interaccion a la vez
-SemaphoreHandle_t xUserInputSemaphore;
-SemaphoreHandle_t xDataMutex;
+QueueHandle_t xUserInputQueue; // Cola con las entradas de los botones
+SemaphoreHandle_t xDataMutex;  // Mutex de los datos de estado
 
 void setup()
 {
   Serial.begin(9600);
+  Wire.begin();
+  sensor.initialize();
   pinMode(BUTTON_01, INPUT);
   pinMode(BUTTON_02, INPUT);
   pinMode(BUTTON_03, INPUT);
@@ -132,12 +141,16 @@ void setup()
   right = digitalRead(BUTTON_02);
   enter = digitalRead(BUTTON_03);
   esc = digitalRead(BUTTON_04);
-  limpieza = 10;
-  hambre = 10;
-  sueno = 10;
-  salud = 10;
-  aburrimiento = 10;
+
+  limpieza = 100;
+  hambre = 100;
+  sueno = 100;
+  salud = 100;
+  aburrimiento = 100;
+
+  option = 0;
   edad = 0;
+  k = 0.2;//0.05;
 
   if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
   {
@@ -145,58 +158,25 @@ void setup()
     for (;;)
       ;
   }
-  display.display();
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(WHITE);
-  // Simbolo mascota
-  display.drawBitmap(0, 0, neutral_mood, 45, 45, WHITE);
-  // Simbolos de estado
-  display.drawBitmap(55, 0, clean, 12, 12, WHITE);
-  display.setCursor(69, 3); // x+14, y+3
-  display.print(limpieza);
-  display.drawBitmap(90, 0, hunger, 12, 12, WHITE);
-  display.setCursor(104, 3);
-  display.print(hambre);
-  display.drawBitmap(55, 15, sleeping, 12, 12, WHITE);
-  display.setCursor(69, 18);
-  display.print(sueno);
-  display.drawBitmap(90, 15, play, 12, 12, WHITE);
-  display.setCursor(104, 18);
-  display.print(aburrimiento);
-  display.drawBitmap(55, 30, health, 12, 12, WHITE);
-  display.setCursor(69, 33);
-  display.print(salud);
-  display.drawBitmap(90, 30, age, 12, 12, WHITE);
-  display.setCursor(104, 33);
-  display.print(edad);
-  // Simbolos botones
-  display.drawBitmap(0, 44, eatButton, 20, 20, WHITE);
-  display.drawBitmap(25, 44, cleanButton, 20, 20, WHITE);
-  display.drawBitmap(50, 44, playButton, 20, 20, WHITE);
-  display.drawBitmap(75, 44, sleepButton, 20, 20, WHITE);
-  display.drawBitmap(100, 44, deathButton, 20, 20, WHITE);
-  display.display();
+
+  if (sensor.testConnection())
+    Serial.println("Sensor iniciado correctamente");
+  else
+    Serial.println("Error al iniciar el sensor");
 
   // Crear colas y semáforos
-  xUserInputQueue = xQueueCreate(5, sizeof(uint8_t));
-  xGameResultQueue = xQueueCreate(5, sizeof(uint8_t));
-  xFoodAvailableSemaphore = xSemaphoreCreateBinary();
-  xMultipleGamesSemaphore = xSemaphoreCreateMutex();
-  xUserInputSemaphore = xSemaphoreCreateMutex();
+  xUserInputQueue = xQueueCreate(10, sizeof(uint8_t));
   xDataMutex = xSemaphoreCreateMutex();
 
   // Crear tareas
-  xTaskCreate(vUITask, "UI Task", 8000, NULL, 1, NULL);
-  xTaskCreate(vUserInputTask, "User Input Task", 8000, NULL, 1, NULL);
-  // xTaskCreate(vStateUpdateTask, "State Update Task", 1000, NULL, 2, NULL);
+  xTaskCreate(vUITask, "UI Task", 32000, NULL, 1, NULL);
+  xTaskCreate(vUserInputTask, "User Input Task", 1000, NULL, 1, NULL);
+  xTaskCreate(vStateUpdateTask, "State Update Task", 1000, NULL, 2, NULL);
+  xTaskCreate(vAgeTask, "Feeding Task", 1000, NULL, 2, NULL);
   // xTaskCreate(vFeedingTask, "Feeding Task", 1000, NULL, 2, NULL);
-  // xTaskCreate(vGameTask, "Game Task", 1000, NULL, 2, NULL);
+  // xTaskCreate(vGameTask, "Game Task", 2000, NULL, 2, NULL);
   // xTaskCreate(vSleepTask, "Sleep Task", 1000, NULL, 2, NULL);
   // xTaskCreate(vCleanTask, "Clean Task", 1000, NULL, 2, NULL);
-
-  // Iniciar el planificador de FreeRTOS
-  // vTaskStartScheduler();
 }
 
 void loop()
@@ -233,23 +213,100 @@ void vUITask(void *pvParameters)
 {
   while (1)
   {
-    Serial.println("T3");
-    xSemaphoreTake(xUserInputSemaphore, portMAX_DELAY);
-    Serial.println("T4");
-    BaseType_t status = xQueueReceive(xUserInputQueue, &xQueueRx, portMAX_DELAY);
-    Serial.println("T5");
-    if (status == pdPASS)
+    uint32_t rxElement = 0;
+    if (xQueueReceive(xUserInputQueue, (void *)&rxElement, (TickType_t)10))
     {
-      display.setCursor(104, 33);
-      display.print(xQueueRx);
-      display.display();
+      Serial.println("Elemento recibido.");
+      switch (rxElement)
+      {
+      case 1:
+        option = ((option - 1) % 5);
+        if (option < 0)
+        {
+          option += 5;
+        }
+        break;
+      case 2:
+        option = ((option + 1) % 5);
+        break;
+      case 3:
+        break;
+      case 4:
+        break;
+      }
+      Serial.println(option);
     }
-    else
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(WHITE);
+    // Simbolo mascota
+    display.drawBitmap(0, 0, neutral_mood, 45, 45, WHITE);
+    // Simbolos de estado
+    display.drawBitmap(55, 0, clean, 12, 12, WHITE);
+    display.setCursor(69, 3); // x+14, y+3
+    display.print(limpieza);
+    display.drawBitmap(90, 0, hunger, 12, 12, WHITE);
+    display.setCursor(104, 3);
+    display.print(hambre);
+    display.drawBitmap(55, 15, sleeping, 12, 12, WHITE);
+    display.setCursor(69, 18);
+    display.print(sueno);
+    display.drawBitmap(90, 15, play, 12, 12, WHITE);
+    display.setCursor(104, 18);
+    display.print(aburrimiento);
+    display.drawBitmap(55, 30, health, 12, 12, WHITE);
+    display.setCursor(69, 33);
+    display.print(salud);
+    display.drawBitmap(90, 30, age, 12, 12, WHITE);
+    display.setCursor(104, 33);
+    display.print(edad);
+    // Simbolos botones
+    switch (option)
     {
-      Serial.println("No hay datos en la cola.");
+    case 0:
+      display.drawBitmap(0, 44, eatButton, 20, 20, BLACK, WHITE);
+      display.drawBitmap(25, 44, cleanButton, 20, 20, WHITE);
+      display.drawBitmap(50, 44, playButton, 20, 20, WHITE);
+      display.drawBitmap(75, 44, sleepButton, 20, 20, WHITE);
+      display.drawBitmap(100, 44, deathButton, 20, 20, WHITE);
+      break;
+    case 1:
+      display.drawBitmap(0, 44, eatButton, 20, 20, WHITE);
+      display.drawBitmap(25, 44, cleanButton, 20, 20, BLACK, WHITE);
+      display.drawBitmap(50, 44, playButton, 20, 20, WHITE);
+      display.drawBitmap(75, 44, sleepButton, 20, 20, WHITE);
+      display.drawBitmap(100, 44, deathButton, 20, 20, WHITE);
+      break;
+    case 2:
+      display.drawBitmap(0, 44, eatButton, 20, 20, WHITE);
+      display.drawBitmap(25, 44, cleanButton, 20, 20, WHITE);
+      display.drawBitmap(50, 44, playButton, 20, 20, BLACK, WHITE);
+      display.drawBitmap(75, 44, sleepButton, 20, 20, WHITE);
+      display.drawBitmap(100, 44, deathButton, 20, 20, WHITE);
+      break;
+    case 3:
+      display.drawBitmap(0, 44, eatButton, 20, 20, WHITE);
+      display.drawBitmap(25, 44, cleanButton, 20, 20, WHITE);
+      display.drawBitmap(50, 44, playButton, 20, 20, WHITE);
+      display.drawBitmap(75, 44, sleepButton, 20, 20, BLACK, WHITE);
+      display.drawBitmap(100, 44, deathButton, 20, 20, WHITE);
+      break;
+    case 4:
+      display.drawBitmap(0, 44, eatButton, 20, 20, WHITE);
+      display.drawBitmap(25, 44, cleanButton, 20, 20, WHITE);
+      display.drawBitmap(50, 44, playButton, 20, 20, WHITE);
+      display.drawBitmap(75, 44, sleepButton, 20, 20, WHITE);
+      display.drawBitmap(100, 44, deathButton, 20, 20, BLACK, WHITE);
+      break;
+    default:
+      display.drawBitmap(0, 44, eatButton, 20, 20, WHITE);
+      display.drawBitmap(25, 44, cleanButton, 20, 20, WHITE);
+      display.drawBitmap(50, 44, playButton, 20, 20, WHITE);
+      display.drawBitmap(75, 44, sleepButton, 20, 20, WHITE);
+      display.drawBitmap(100, 44, deathButton, 20, 20, WHITE);
     }
-
-    xSemaphoreGive(xUserInputSemaphore);
+    display.display();
+    vTaskDelay(pdMS_TO_TICKS(200));
   }
 }
 
@@ -257,29 +314,47 @@ void vUserInputTask(void *pvParameters)
 {
   while (1)
   {
-    Serial.println("T1");
-    xSemaphoreTake(xUserInputSemaphore, portMAX_DELAY);
-    xQueueTx = getUserInput();
-    Serial.println("T2");
-    if (xQueueTx != 0)
+    uint32_t input = getUserInput();
+    if (input != 0 && xQueueSend(xUserInputQueue, (void *)&input, (TickType_t)0) == pdTRUE)
     {
-      xQueueSend(xUserInputQueue, &xQueueTx, portMAX_DELAY);
+      Serial.println("Enviado exitosamente.");
     }
-    xSemaphoreGive(xUserInputSemaphore);
+    vTaskDelay(pdMS_TO_TICKS(300));
+  }
+}
+
+void vAgeTask(void *pvParameters)
+{
+  while (1)
+  {
+    edad++;
+    vTaskDelay(pdMS_TO_TICKS(2000 / k));
   }
 }
 
 void vStateUpdateTask(void *pvParameters)
 {
-  // Implementación de la tarea de actualización de estado
   while (1)
   {
-    // Actualizar estado general de la mascota
-    // Usar xSemaphoreTake() y xSemaphoreGive() para acceder a datos compartidos
     xSemaphoreTake(xDataMutex, portMAX_DELAY);
-    // Actualizar datos co mpartidos
+    (limpieza > 0) ? limpieza -= 2 : limpieza = limpieza;
+    (hambre > 0) ? hambre -= 4 : hambre = hambre;
+    (sueno > 0) ? sueno -= 2 : sueno = sueno;
+    (aburrimiento > 0) ? aburrimiento -= 4 : aburrimiento = aburrimiento;
+    if (hambre<=30){
+      (salud > 0) ? salud -= 2 : salud = salud;
+    }
+    if (sueno<=30){
+      (salud > 0) ? salud -= 2 : salud = salud;
+    }
+    if (aburrimiento<=20){
+      (salud > 0) ? salud -= 1 : salud = salud;
+    }
+    if (limpieza<=15){
+      (salud > 0) ? salud -= 1 : salud = salud;
+    }
     xSemaphoreGive(xDataMutex);
-    vTaskDelay(pdMS_TO_TICKS(1000)); // Esperar 1 segundo
+    vTaskDelay(pdMS_TO_TICKS(400 / k));
   }
 }
 
@@ -288,9 +363,9 @@ void vFeedingTask(void *pvParameters)
   while (1)
   {
     // Esperar a que esté disponible la comida
-    xSemaphoreTake(xFoodAvailableSemaphore, portMAX_DELAY);
+    // xSemaphoreTake(xFoodAvailableSemaphore, portMAX_DELAY);
     // Alimentar a la mascota
-    vTaskDelay(pdMS_TO_TICKS(500)); // Esperar 0.5 segundos
+    // vTaskDelay(pdMS_TO_TICKS(500)); // Esperar 0.5 segundos
   }
 }
 
@@ -299,8 +374,23 @@ void vGameTask(void *pvParameters)
   while (1)
   {
     // Realizar una acción de juego
-    xSemaphoreGive(xMultipleGamesSemaphore); // Liberar el semáforo para permitir ot ro juego
-    vTaskDelay(pdMS_TO_TICKS(2000));         // Esperar 2 segundos
+    // xSemaphoreGive(xMultipleGamesSemaphore); // Liberar el semáforo para permitir ot ro juego
+    // vTaskDelay(pdMS_TO_TICKS(2000));         // Esperar 2 segundos
+    sensor.getAcceleration(&ax, &ay, &az);
+    sensor.getRotation(&gx, &gy, &gz);
+    // Serial.print("a[x y z] g[x y z]:\t");
+    // Serial.print(ax);
+    // Serial.print("\t");
+    // Serial.print(ay);
+    // Serial.print("\t");
+    // Serial.print(az);
+    // Serial.print("\t");
+    // Serial.print(gx);
+    // Serial.print("\t");
+    // Serial.print(gy);
+    // Serial.print("\t");
+    // Serial.println(gz);
+    vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
 
@@ -310,6 +400,7 @@ void vSleepTask(void *pvParameters)
   {
     // Control de sueño de la mascota
     xSemaphoreTake(xDataMutex, portMAX_DELAY);
+
     xSemaphoreGive(xDataMutex);
   }
 }
