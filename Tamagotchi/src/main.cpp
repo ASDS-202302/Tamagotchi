@@ -150,7 +150,7 @@ void setup()
 
   option = 0;
   edad = 0;
-  k = 0.2;//0.05;
+  k = 0.2; // 0.05;
 
   if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
   {
@@ -319,7 +319,7 @@ void vUserInputTask(void *pvParameters)
     {
       Serial.println("Enviado exitosamente.");
     }
-    vTaskDelay(pdMS_TO_TICKS(300));
+    vTaskDelay(pdMS_TO_TICKS(350));
   }
 }
 
@@ -328,7 +328,7 @@ void vAgeTask(void *pvParameters)
   while (1)
   {
     edad++;
-    vTaskDelay(pdMS_TO_TICKS(2000 / k));
+    vTaskDelay(pdMS_TO_TICKS(6000 / k));
   }
 }
 
@@ -337,22 +337,16 @@ void vStateUpdateTask(void *pvParameters)
   while (1)
   {
     xSemaphoreTake(xDataMutex, portMAX_DELAY);
-    (limpieza > 0) ? limpieza -= 2 : limpieza = limpieza;
-    (hambre > 0) ? hambre -= 4 : hambre = hambre;
-    (sueno > 0) ? sueno -= 2 : sueno = sueno;
-    (aburrimiento > 0) ? aburrimiento -= 4 : aburrimiento = aburrimiento;
-    if (hambre<=30){
-      (salud > 0) ? salud -= 2 : salud = salud;
-    }
-    if (sueno<=30){
-      (salud > 0) ? salud -= 2 : salud = salud;
-    }
-    if (aburrimiento<=20){
-      (salud > 0) ? salud -= 1 : salud = salud;
-    }
-    if (limpieza<=15){
-      (salud > 0) ? salud -= 1 : salud = salud;
-    }
+    (int(limpieza) - 2) <= 0 ? limpieza = 0 : limpieza -= 2;
+    (int(hambre) - 3) <= 0 ? hambre = 0 : hambre -= 3;
+    (int(sueno) - 2) <= 0 ? sueno = 0 : sueno -= 2;
+    (int(aburrimiento) - 3) <= 0 ? aburrimiento = 0 : aburrimiento -= 3;
+
+    (hambre<=20 && (int(salud)-2)>=0)? salud-=2: salud-=0;
+    (sueno<=20 && (int(salud)-2)>=0)? salud-=2: salud-=0;
+    (aburrimiento<=15 && (int(salud)-1)>=0)? salud-=1: salud-=0;
+    (limpieza<=10 && (int(salud)-1)>=0)? salud-=1: salud-=0;
+
     xSemaphoreGive(xDataMutex);
     vTaskDelay(pdMS_TO_TICKS(400 / k));
   }
@@ -378,18 +372,18 @@ void vGameTask(void *pvParameters)
     // vTaskDelay(pdMS_TO_TICKS(2000));         // Esperar 2 segundos
     sensor.getAcceleration(&ax, &ay, &az);
     sensor.getRotation(&gx, &gy, &gz);
-    // Serial.print("a[x y z] g[x y z]:\t");
-    // Serial.print(ax);
-    // Serial.print("\t");
-    // Serial.print(ay);
-    // Serial.print("\t");
-    // Serial.print(az);
-    // Serial.print("\t");
-    // Serial.print(gx);
-    // Serial.print("\t");
-    // Serial.print(gy);
-    // Serial.print("\t");
-    // Serial.println(gz);
+    Serial.print("a[x y z] g[x y z]:\t");
+    Serial.print(ax);
+    Serial.print("\t");
+    Serial.print(ay);
+    Serial.print("\t");
+    Serial.print(az);
+    Serial.print("\t");
+    Serial.print(gx);
+    Serial.print("\t");
+    Serial.print(gy);
+    Serial.print("\t");
+    Serial.println(gz);
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
