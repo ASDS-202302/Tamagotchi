@@ -291,14 +291,14 @@ void vUITask(void *pvParameters);          // Interfaz grafica
 void vUserInputTask(void *pvParameters);   // Recibir el input del usuario
 void vStateUpdateTask(void *pvParameters); // Actualizar variables de estado
 void vAgeTask(void *pvParameters);         // Envejecer
-void vActionTask(void *pvParameters);      // Alimentar
+void vActionTask(void *pvParameters);      // Accion de la opcion escogida
 void vGameTask(void *pvParameters);        // Jugar (Giroscopio)
 
 // Definición de colas y semáforos
 QueueHandle_t xUserInputQueue; // Cola con las entradas de los botones
-QueueHandle_t xActionQueue;    // Cola con las entradas de los botones
+QueueHandle_t xActionQueue;    // Cola con las acciones escogidas con los botones
 SemaphoreHandle_t xDataMutex;  // Mutex de los datos de estado
-SemaphoreHandle_t xMoodSemph;  // Semaforo del mood
+SemaphoreHandle_t xMoodSemph;  // Semaforo para modificar la imagen del tamagotchi
 
 void setup()
 {
