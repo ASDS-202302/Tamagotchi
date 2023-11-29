@@ -388,7 +388,6 @@ void vUITask(void *pvParameters)
     uint32_t rxElement = 0;
     if (xQueueReceive(xUserInputQueue, (void *)&rxElement, (TickType_t)10))
     {
-      // Serial.println("Elemento recibido.");
       switch (rxElement)
       {
       case 1:
@@ -404,14 +403,13 @@ void vUITask(void *pvParameters)
       case 3:
         if (xQueueSend(xActionQueue, (void *)&option, (TickType_t)0) == true)
         {
-          // Serial.println("Accion realizada correctamente.");
+          //Do nothing
         }
 
         break;
       case 4:
         break;
       }
-      // Serial.println(option);
     }
     display.clearDisplay();
     display.setTextSize(1);
